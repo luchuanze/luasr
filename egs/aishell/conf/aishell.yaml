@@ -1,0 +1,60 @@
+dataset_conf:
+    filter_conf:
+        max_length: 40960
+        min_length: 0
+        token_max_length: 200
+        token_min_length: 1
+    resample_conf:
+        resample_rate: 16000
+    add_noise: true
+    speed_perturb: true
+    fbank_conf:
+        num_mel_bins: 80
+        frame_shift: 10
+        frame_length: 25
+        dither: 0.1
+    spec_aug: true
+    spec_aug_conf:
+        num_t_mask: 2
+        num_f_mask: 2
+        max_t: 50
+        max_f: 10
+    shuffle: true
+    shuffle_conf:
+        shuffle_size: 1500
+    sort: true
+    sort_conf:
+        sort_size: 500  # sort_size should be less than shuffle_size
+    batch_conf:
+        batch_type: 'static' # static or dynamic
+        batch_size: 4
+model:
+    type: transducer
+    encoder:
+        type: transformer
+        output_dim: 512
+        attention_dim: 512
+        attention_heads: 8
+        feedforward_size: 2048
+        num_layers: 12
+        normalize_before: True
+    joint:
+        input_dim: 640
+        output_dim: 512
+    vocab_size: 4232
+    share_weight: False
+    feature_dim: 80
+    dropout: 0.3
+    subsampling_factor: 4
+    
+grad_clip: 5
+accum_grad: 4
+max_epoch: 240
+log_interval: 100
+    
+optim: adam
+optim_conf:
+    lr: 0.002
+scheduler: warmuplr     # pytorch v1.1.0+ required
+scheduler_conf:
+    warmup_steps: 25000
