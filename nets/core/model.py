@@ -2,7 +2,7 @@
 import torch
 from nets.core.encoder_transformer import Transformer as EncoderTransformer
 from nets.core.predictor_stateless import Predictor
-from nets.core.transducer import Transducer, Joiner
+from nets.core.transducer import Transducer, TransducerOptimized, Joiner
 from nets.core.utils import load_cmvn
 
 
@@ -89,6 +89,12 @@ class TransducerTransformer(torch.nn.Module):
             predictor=predictor,
             joiner=joiner
         )
+        # self.transducer = TransducerOptimized(
+        #     encoder=encoder,
+        #     predictor=predictor,
+        #     joiner=joiner,
+        #     optimized_prob=0.5
+        # )
 
     def forward(self,
                 x: torch.Tensor,

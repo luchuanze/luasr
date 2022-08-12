@@ -47,14 +47,14 @@ model:
     dropout: 0.3
     subsampling_factor: 4
     
-grad_clip: 5
-accum_grad: 4
+grad_clip: 20
+accum_grad: 1
 max_epoch: 240
 log_interval: 100
     
 optim: adam
 optim_conf:
-    lr: 0.002
+    lr: 0.001
 scheduler: warmuplr     # pytorch v1.1.0+ required
 scheduler_conf:
-    warmup_steps: 25000
+    warmup_steps: 40000

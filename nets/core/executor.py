@@ -63,6 +63,7 @@ class Executor:
 
         if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
             model_context = self.model.join
+            logging.info('model is distributedDataParallel.')
         else:
             model_context = nullcontext
 
@@ -103,7 +104,7 @@ class Executor:
                         epoch, idx,
                         loss.item() * self.accum_grad
                     )
-                    log_str += 'lr {:.8f} rank {}'.format(lr, self.rank)
+                    log_str += ' lr {:.8f} rank {}'.format(lr, self.rank)
                     logging.debug(log_str)
 
     def cv(self, epoch, data_loader):

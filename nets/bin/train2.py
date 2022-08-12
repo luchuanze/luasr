@@ -13,6 +13,7 @@ from nets.utils.file_utils import read_symbol_table, read_non_lang_symbols
 from nets.dataset.dataset import Dataset
 from nets.core.model import TransducerTransformer
 from nets.core.executor import Executor
+from nets.core.checkpoint import load_chekpoint, save_checkpoint
 
 
 def get_args():
@@ -111,8 +112,6 @@ def get_args():
 
 def run(rank, args):
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = str(rank)
-
     logging.basicConfig(level=logging.DEBUG,
                         format='%(asctime)s %(levelname)s %(message)s')
 
@@ -131,7 +130,7 @@ def run(rank, args):
 
     symbol_table = read_symbol_table(args.symbol_table)
 
-    print(symbol_table)
+    #print(symbol_table)
     train_conf = configs['dataset_conf']
     cv_conf = copy.deepcopy(train_conf)
     cv_conf['speed_perturb'] = False
@@ -192,19 +191,29 @@ def run(rank, args):
     print(model)
     num_params = sum(p.numel() for p in model.parameters())
     logging.info('the number of model params is {}.'.format(num_params))
-    print(num_params)
+
+    start_epoch = 0
+    num_epoch = args.num_epoch
+    if args.checkpoint is not None:
+        checkpoint_info = load_chekpoint(model, args.checkpoint)
+        start_epoch = checkpoint_info.get('epoch', -1) + 1
+        cv_loss = checkpoint_info.get('cv_loss', 0.0)
+        step = checkpoint_info.get('step', -1)
+    else:
+        checkpoint_info = {}
 
     #if rank == 0:
     #    script_model = torch.jit.script(model)
     #    script_model.save(os.path.join(args.model_dir, 'init.zip'))
 
     assert (torch.cuda.is_available())
-
+    model.cuda()
     device = torch.device('cuda')
     model.to(device)
+
     if distributed:
         model = torch.nn.parallel.DistributedDataParallel(
-            model, device_ids=[rank], find_unused_parameters=True
+            model, find_unused_parameters=True
         )
 
     executor = Executor(model, device, rank,
@@ -214,9 +223,6 @@ def run(rank, args):
                         log_interval=configs['log_interval'],
                         optimizer_conf=configs['optim_conf'],
                         scheduler_conf=configs['scheduler_conf'])
-
-    start_epoch = args.start_epoch
-    num_epoch = args.num_epoch
 
     for epoch in range(start_epoch, num_epoch):
         train_dataset.set_epoch(epoch)
@@ -229,28 +235,34 @@ def run(rank, args):
         cv_loss = total_loss / num_seen_utts
         logging.info('Epoch {} CV loss {}.'.format(epoch, cv_loss))
 
+        if rank == 0:
+            save_path = os.path.join(args.model_dir, '{}.pt'.format(epoch))
+            save_checkpoint(
+                model,
+                save_path,
+                {'epoch': epoch, 'lr': lr, 'cv_loss': cv_loss, 'step': executor.step}
+            )
+
 
 def main():
-
-    lens = torch.tensor([1, 3, 2])
-
-    x = torch.arange(3).expand(4, 3).to(lens)
-    print(lens.unsqueeze(1))
 
     args = get_args()
     logging.basicConfig(level=logging.DEBUG,
                         format='%(asctime)s %(levelname)s %(message)s')
 
+    os.environ['CUDA_VISIBLE_DEVICES'] = str(args.rank)
+
     logging.info('Start training.')
 
     world_size = args.world_size
     assert world_size >= 0
-    if world_size > 1:
-        logging.info('training on multiple gpus')
-        mp.spawn(run, args=(args,), nprocs=world_size, join=True)
-    else:
-        logging.info('training on single gpus')
-        run(rank=0, args=args)
+    #if world_size > 1:
+    #    logging.info('training on multiple gpus')
+    #    mp.spawn(run, args=(args,), nprocs=world_size, join=True)
+    #else:
+    #    logging.info('training on single gpus')
+    #    run(rank=0, args=args)
+    run(args.rank, args=args)
 
 
 if __name__ == '__main__':

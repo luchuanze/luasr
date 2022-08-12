@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import logging
 import random
 
 import torch
@@ -58,9 +58,11 @@ class DistributedSampler:
         if dist.is_initialized():
             self.rank = dist.get_rank()
             self.world_size = dist.get_world_size()
+            logging.info('dist is initialized, rank {} world_size {}.'.format(self.rank, self.world_size))
         else:
             self.rank = 0
             self.world_size = 1
+            logging.info('dist is not initialized.')
         worker_info = torch.utils.data.get_worker_info()
         if worker_info is None:
             self.worker_id = 0

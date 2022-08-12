@@ -1,3 +1,4 @@
+import random
 
 import torch
 from nets.core.encoder_interface import EncoderInterface
@@ -10,6 +11,7 @@ class Transducer(torch.nn.Module):
                  encoder: EncoderInterface,
                  predictor: torch.nn.Module,
                  joiner: torch.nn.Module,
+                 optimized_prob: float = 0.0
                  ):
         super(Transducer, self).__init__()
         assert isinstance(encoder, EncoderInterface), type(encoder)
@@ -18,6 +20,7 @@ class Transducer(torch.nn.Module):
         self.encoder = encoder
         self.predictor = predictor
         self.joiner = joiner
+        self.optimized_prob = optimized_prob
 
     def forward(self,
                 x: torch.Tensor,
@@ -55,7 +58,7 @@ class Transducer(torch.nn.Module):
 
         y_padded = y.to(torch.int32)
 
-        loss = torchaudio.functional.rnnt_loss(
+        loss = self.compute_loss(
             logits=logits,
             targets=y_padded,
             logit_lengths=x_lens,
@@ -65,6 +68,66 @@ class Transducer(torch.nn.Module):
         )
 
         return loss
+
+    def compute_loss(self,
+                     logits,
+                     targets,
+                     logit_lengths,
+                     target_lengths,
+                     blank,
+                     reduction):
+        return torchaudio.functional.rnnt_loss(
+            logits=logits,
+            targets=targets,
+            logit_lengths=logit_lengths,
+            target_lengths=target_lengths,
+            blank=blank,
+            reduction=reduction,
+        )
+
+
+class TransducerOptimized(Transducer):
+
+    def __init__(self,
+                 encoder: EncoderInterface,
+                 predictor: torch.nn.Module,
+                 joiner: torch.nn.Module,
+                 optimized_prob: float = 0.0
+                 ):
+        super(TransducerOptimized, self).__init__(encoder,
+                                                  predictor,
+                                                  joiner,
+                                                  optimized_prob)
+
+    def compute_loss(self,
+                     logits,
+                     targets,
+                     logit_lengths,
+                     target_lengths,
+                     blank,
+                     reduction):
+
+        assert 0.0 <= self.optimized_prob <= 1, self.optimized_prob
+
+        import optimized_transducer
+
+        if self.optimized_prob == 0:
+            one_sym_per_frame = False
+        elif random.random() < self.optimized_prob:
+            one_sym_per_frame = True
+        else:
+            one_sym_per_frame = False
+
+        return optimized_transducer.transducer_loss(
+            logits=logits,
+            targets=targets,
+            logit_lengths=logit_lengths,
+            target_lengths=target_lengths,
+            blank=blank,
+            reduction="mean",
+            one_sym_per_frame=one_sym_per_frame,
+            from_log_softmax=False
+        )
 
 
 class Joiner(torch.nn.Module):
