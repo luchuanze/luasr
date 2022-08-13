@@ -7,7 +7,7 @@
 
 #### LuASR 是一个端到端语音识别项目，目的是基于 PYTORCH 框架提供当前流行的 CTC , TRANSDUCE , TRANSFORMER 等多任务端到端识别架构，支持不同编码模块如，TDNN, LSTM, MHA, CONFORMER 供从事语音识别者学习；也将提供基于 C/C++的runtime （x86、ARM）解码器可用于项目工程化。
 
-#### 该项目参考当前一些流行的语音识别开源项目，如 wenet，next gen kaldi, espent 等。
+#### 该项目参考当前一些流行的语音识别开源项目，如 wenet，next gen kaldi, ESPnet 等。
 
 ## 安装及使用
 
