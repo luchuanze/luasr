@@ -9,10 +9,10 @@ import torch
 import torch.distributed as dist
 from torch.utils.data import DataLoader
 
-from nets.utils.file_utils import read_symbol_table, read_non_lang_symbols
+from nets.utils.file_utils import read_words_dict, read_non_lang_symbols
 from nets.dataset.dataset import Dataset
 from nets.core.model import TransducerTransformer
-from nets.core.executor import Executor
+from nets.core.trainer import Trainer
 from nets.core.checkpoint import load_chekpoint, save_checkpoint
 
 
@@ -128,7 +128,7 @@ def run(rank, args):
                                 world_size=args.world_size,
                                 rank=rank)
 
-    symbol_table = read_symbol_table(args.symbol_table)
+    symbol_table, _ = read_words_dict(args.symbol_table)
 
     #print(symbol_table)
     train_conf = configs['dataset_conf']
@@ -216,21 +216,21 @@ def run(rank, args):
             model, find_unused_parameters=True
         )
 
-    executor = Executor(model, device, rank,
-                        accum_grad=configs['accum_grad'],
-                        grad_clip=configs['grad_clip'],
-                        is_dist=distributed,
-                        log_interval=configs['log_interval'],
-                        optimizer_conf=configs['optim_conf'],
-                        scheduler_conf=configs['scheduler_conf'])
+    trainer = Trainer(model, device, rank,
+                      accum_grad=configs['accum_grad'],
+                      grad_clip=configs['grad_clip'],
+                      is_dist=distributed,
+                      log_interval=configs['log_interval'],
+                      optimizer_conf=configs['optim_conf'],
+                      scheduler_conf=configs['scheduler_conf'])
 
     for epoch in range(start_epoch, num_epoch):
         train_dataset.set_epoch(epoch)
-        lr = executor.get_lr()
+        lr = trainer.get_lr()
         logging.info('Epoch {} TRAIN info lr {:.8f}'.format(epoch, lr))
-        executor.train(epoch, train_data_loader)
+        trainer.run(epoch, train_data_loader)
 
-        total_loss, num_seen_utts = executor.cv(epoch, cv_data_loader)
+        total_loss, num_seen_utts = trainer.cv(epoch, cv_data_loader)
 
         cv_loss = total_loss / num_seen_utts
         logging.info('Epoch {} CV loss {}.'.format(epoch, cv_loss))

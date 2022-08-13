@@ -5,14 +5,14 @@ from torch.nn.utils import clip_grad_norm_
 from torch.optim.lr_scheduler import _LRScheduler
 
 
-class WarmupLR(_LRScheduler):
+class LRScheduler(_LRScheduler):
     def __init__(self,
                  optimizer: torch.optim.Optimizer,
                  warmup_steps: int = 25000,
                  last_epoch: int = -1):
 
         self.warmup_steps = warmup_steps
-        super(WarmupLR, self).__init__(optimizer, last_epoch)
+        super(LRScheduler, self).__init__(optimizer, last_epoch)
 
     def __repr__(self):
         return f"{self.__class__.__name__}(warmup_steps={self.warmup_steps})"
@@ -30,7 +30,7 @@ class WarmupLR(_LRScheduler):
         self.last_epoch = step
 
 
-class Executor:
+class Trainer:
     def __init__(self,
                  model: torch.nn.Module,
                  device,
@@ -52,14 +52,14 @@ class Executor:
 
         self.model = model
         self.optimizer = torch.optim.Adam(model.parameters(), **optimizer_conf)
-        self.scheduler = WarmupLR(optimizer=self.optimizer, **scheduler_conf)
+        self.scheduler = LRScheduler(optimizer=self.optimizer, **scheduler_conf)
         self.device = device
         self.log_interval = log_interval
 
     def get_lr(self):
         return self.optimizer.param_groups[0]['lr']
 
-    def train(self, epoch, data_loader):
+    def run(self, epoch, data_loader):
 
         if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
             model_context = self.model.join

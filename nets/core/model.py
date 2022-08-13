@@ -2,7 +2,7 @@
 import torch
 from nets.core.encoder_transformer import Transformer as EncoderTransformer
 from nets.core.predictor_stateless import Predictor
-from nets.core.transducer import Transducer, TransducerOptimized, Joiner
+from nets.core.loss_transducer import Transducer, TransducerOptimized, Joiner
 from nets.core.utils import load_cmvn
 
 
