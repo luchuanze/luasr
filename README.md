@@ -13,7 +13,7 @@
 
 ### 环境配置
 
-使用 Linux 系统，推荐 Ubantu 20.+, CUDN = 11.3, GPU >= 8G 。
+使用 Linux 系统，推荐 Ubantu 20.+, CUDA = 11.3, GPU >= 8G 。
 
 安装 Python 开发环境，推荐版本 >= 3.8 。
 
