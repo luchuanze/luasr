@@ -62,3 +62,41 @@ class Predictor(torch.nn.Module):
             embed = embed.permute(0, 2, 1)
 
         return embed
+
+
+class PredictorLstm(torch.nn.Module):
+    def __init__(self,
+                 vocab_size: int,
+                 embedding_dim: int,
+                 blank_id: int,
+                 num_layers: int
+                 ):
+        super(PredictorLstm, self).__init__()
+
+        self.embedding = torch.nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
+
+        self.lstm_layer = torch.nn.LSTM(
+            input_size=embedding_dim,
+            hidden_size=embedding_dim,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=0.1 if num_layers > 1 else 0
+        )
+
+        self.output_layer = torch.nn.Linear(embedding_dim, embedding_dim)
+
+        self.blank_id = blank_id
+
+    def forward(self,
+                y: torch.Tensor,
+                hidden=None):
+        embed = self.embedding(y)
+        outputs, hidden = self.lstm_layer(embed, hidden)
+
+        outputs = self.output_layer(outputs)
+
+        return outputs
+
+
+
+

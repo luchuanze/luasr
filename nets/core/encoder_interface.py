@@ -48,7 +48,7 @@ class Conv2dSubsampling(torch.nn.Module):
             ),
             torch.nn.ReLU(),
         )
-        self.out = torch.nn.Linear(odim * (((idim - 1) // 2 - 1) // 2), odim)
+        self.out = torch.nn.Sequential(torch.nn.Linear(odim * (((idim - 1) // 2 - 1) // 2), odim))
 
     def forward(self,
                 x: torch.Tensor
@@ -113,8 +113,24 @@ class PositionalEncoding(torch.nn.Module):
         tensor of shape(b, t, c)
         """
         self.extend_pe(x)
-        x = x * self.scale + self.pe[:, : x.size(1), :]
+        pos_emb = self.pe[:, : x.size(1)]
+        x = x * self.scale + pos_emb
         return self.dropout(x)
+
+
+class RelPositionalEncoding(PositionalEncoding):
+
+    def __init__(self,
+                 dim,
+                 dropout: float = 0.1
+                 ):
+        super(RelPositionalEncoding, self).__init__(dim, dropout)
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        self.extend_pe(x)
+        x = x * self.scale
+        pos_emb = self.pe[:, : x.size(1)]
+        return self.dropout(x), self.dropout(pos_emb)
 
 
 def make_pad_mask(lengths: torch.Tensor) -> torch.Tensor:

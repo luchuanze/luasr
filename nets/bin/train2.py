@@ -240,7 +240,7 @@ def run(rank, args):
             save_checkpoint(
                 model,
                 save_path,
-                {'epoch': epoch, 'lr': lr, 'cv_loss': cv_loss, 'step': executor.step}
+                {'epoch': epoch, 'lr': lr, 'cv_loss': cv_loss, 'step': trainer.step}
             )
 
 

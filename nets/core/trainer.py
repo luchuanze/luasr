@@ -51,7 +51,11 @@ class Trainer:
                      ' larger than before'.format(self.accum_grad))
 
         self.model = model
-        self.optimizer = torch.optim.Adam(model.parameters(), **optimizer_conf)
+        self.optimizer = torch.optim.Adam(
+            model.parameters(),
+            betas=(0.9, 0.98),
+            eps=1e-9,
+            **optimizer_conf)
         self.scheduler = LRScheduler(optimizer=self.optimizer, **scheduler_conf)
         self.device = device
         self.log_interval = log_interval
@@ -85,7 +89,8 @@ class Trainer:
                     context = nullcontext
 
                 with context():
-                    loss = self.model(feats, feats_lengths, target, target_lengths)
+                    loss, loss_transducer, loss_transformer = \
+                        self.model(feats, feats_lengths, target, target_lengths)
                     loss = loss / self.accum_grad
                     assert loss.requires_grad == True, loss.requires_grad
                     loss.backward()
@@ -100,9 +105,12 @@ class Trainer:
 
                 if idx % self.log_interval == 0:
                     lr = self.optimizer.param_groups[0]['lr']
-                    log_str = 'train batch {}/{} loss {:.6f}'.format(
+                    log_str = 'train epoch {} batch {} size {} loss {:.6f} ({:.6f},{:.6f})'.format(
                         epoch, idx,
-                        loss.item() * self.accum_grad
+                        num_utts,
+                        loss.item() * self.accum_grad,
+                        loss_transducer,
+                        loss_transformer
                     )
                     log_str += ' lr {:.8f} rank {}'.format(lr, self.rank)
                     logging.debug(log_str)
@@ -123,16 +131,18 @@ class Trainer:
 
                 if num_utts == 0:
                     continue
-                loss = self.model(feats, feats_lengths, target, target_lengths)
+                loss, loss_transducer, loss_transformer = \
+                    self.model(feats, feats_lengths, target, target_lengths)
 
                 if torch.isfinite(loss):
                     num_seen_utts += num_utts
                     total_loss += loss.item() * num_utts
                 else:
-                    logging.error('CV Batch {}/{} loss is not finite.'.format(epoch, idx))
+                    logging.error('CV Epoch {} Batch {} loss is not finite.'.format(epoch, idx))
 
                 if idx % self.log_interval == 0:
-                    log_str = 'CV Batch {}/{} loss {:.6f} '.format(epoch, idx, loss.item())
+                    log_str = 'CV Epoch {} Batch {} loss {:.6f} ({:.6f},{:.6f}) '.format(
+                        epoch, idx, loss.item(), loss_transducer, loss_transformer)
                     log_str += 'history loss {:.6f}'.format(total_loss / num_seen_utts)
                     log_str += ' rank {}'.format(self.rank)
                     logging.debug(log_str)

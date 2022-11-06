@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from nets.utils.file_utils import read_words_dict, read_non_lang_symbols
 from nets.dataset.dataset import Dataset
 from nets.core.model import TransducerTransformer
-from nets.core.executor import Executor
+from nets.core.searcher import Searcher
 from nets.core.checkpoint import load_chekpoint, save_checkpoint
 
 
@@ -26,6 +26,10 @@ def get_args():
                         required=True,
                         help='model unit symbol table')
     parser.add_argument('--test_data', required=True, help='test data file')
+    parser.add_argument('--bpe_model',
+                        default=None,
+                        type=str,
+                        help='bpe model for english part')
     parser.add_argument('--gpu',
                         type=int,
                         default=-1,
@@ -53,7 +57,7 @@ def get_args():
 def main():
     args = get_args()
     logging.basicConfig(level=logging.DEBUG,
-                        format='%(asctime)s %(levelname) %(message)s')
+                        format='%(asctime)s %(levelname)s %(message)s')
 
     os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
 
@@ -62,7 +66,7 @@ def main():
 
     symbol_table, label_word = read_words_dict(args.symbol_table)
 
-    non_lang_syms = read_non_lang_symbols(args.non_lang_syms)
+    non_lang_syms = None
 
     test_conf = configs['dataset_conf']
 
@@ -76,7 +80,7 @@ def main():
     test_conf['add_noise'] = False
 
     test_dataset = Dataset(args.data_type,
-                           args.cv_data,
+                           args.test_data,
                            symbol_table,
                            test_conf,
                            args.bpe_model,
@@ -96,7 +100,7 @@ def main():
 
     # Create asr model from configs
     model_conf = configs['model']
-    model_conf['cmvn_file'] = args.cmvn
+    model_conf['cmvn_file'] = configs['cmvn_file']
     model_conf['is_json_cmvn'] = True
     model = TransducerTransformer(
         input_dim=input_dim,
@@ -107,14 +111,31 @@ def main():
     num_params = sum(p.numel() for p in model.parameters())
     logging.info('the number of model params is {}.'.format(num_params))
 
-    load_chekpoint(model, args.check_point)
+    load_chekpoint(model, args.checkpoint)
     use_cuda = args.gpu >= 0 and torch.cuda.is_available()
     device = torch.device('cuda' if use_cuda else 'cpu')
 
+    model.to(device)
     model.eval()
 
+    searcher = Searcher(model, device)
+
+    hyps = []
     with torch.no_grad(), open(args.result_file, 'w') as fout:
         for idx, batch in enumerate(test_data_loader):
             utts, feats, target, feats_lengths, target_lengths = batch
+            tt = [label_word[i] for i in target.tolist()[0]]
+            print(tt)
+            hyp = searcher.run(feats, feats_lengths)
+
+            for i, key in enumerate(utts):
+                content = ''
+                for w in hyp:
+                    content += label_word[w]
+                logging.info('{} {}'.format(key, content))
+                fout.write('{} {}\n'.format(key, content))
+            #hyps.append([label_word[i] for i in hyp])
 
 
+if __name__ == '__main__':
+    main()

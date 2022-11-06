@@ -47,9 +47,9 @@ class Transformer(EncoderInterface):
             norm=norm,
         )
 
-        self.output_layer = torch.nn.Sequential(
-            torch.nn.Dropout(dropout_rate), torch.nn.Linear(attention_dim, output_dim)
-        )
+        # self.output_layer = torch.nn.Sequential(
+        #     torch.nn.Dropout(dropout_rate), torch.nn.Linear(attention_dim, output_dim)
+        # )
 
     def forward(self,
                 x: torch.Tensor,
@@ -71,7 +71,7 @@ class Transformer(EncoderInterface):
         mask = make_pad_mask(lengths)
         x = self.encoder(x, src_key_padding_mask=mask)
 
-        logits = self.output_layer(x)
+        #logits = self.output_layer(x)
         logits = logits.permute(1, 0, 2)  # (t, b, f) -> (b, t, f)
 
         return logits, lengths
@@ -111,15 +111,15 @@ class TransformerLayer(torch.nn.Module):
         self.normalize_before = normalize_before
 
     def forward(self,
-                x: torch.Tensor,
+                src: torch.Tensor,
                 src_mask: Optional[torch.Tensor] = None,
                 src_key_padding_mask: Optional[torch.Tensor] = None,
                 ) -> torch.Tensor:
 
-        residual = x
+        residual = src
 
         if self.normalize_before:
-            x = self.norm1(x)
+            x = self.norm1(src)
 
         x2 = self.self_attention(
             x,

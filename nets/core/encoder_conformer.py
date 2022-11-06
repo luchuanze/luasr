@@ -12,7 +12,7 @@ class Conformer(Transformer):
 
     def __init__(self,
                  input_size: int = 80,
-                 output_size: int = 256,
+                 output_dim: int = 256,
                  attention_dim: int = 256,
                  attention_heads: int = 4,
                  feedforward_size: int = 2048,
@@ -20,15 +20,17 @@ class Conformer(Transformer):
                  dropout_rate: float = 0.1,
                  cnn_module_kernel: int = 31,
                  normalize_before: bool = True,
+                 global_cmvn: torch.nn.Module = None
                  ) -> None:
-        super(Conformer, self).__int__(
+        super(Conformer, self).__init__(
             input_size=input_size,
-            output_size=output_size,
+            output_dim=output_dim,
             attention_dim=attention_dim,
             feedforward_size=feedforward_size,
             num_layers=num_layers,
             dropout_rate=dropout_rate,
             normalize_before=normalize_before,
+            global_cmvn=global_cmvn
         )
         self.pos = RelPositionalEncoding(attention_dim, dropout_rate)
 
@@ -50,6 +52,10 @@ class Conformer(Transformer):
                 x: torch.Tensor,
                 x_len: torch.Tensor
                 ) -> Tuple[torch.Tensor, torch.Tensor]:
+
+        if self.global_cmvn is not None:
+            x = self.global_cmvn(x)
+
         x = self.Subsampling(x)
 
         x, pos_emb = self.pos(x)
@@ -78,7 +84,7 @@ class ConformerEncoder(torch.nn.TransformerEncoder):
                 norm: torch.nn.Module = None
                 ) -> None:
 
-        super(ConformerEncoder, self).__int__(
+        super(ConformerEncoder, self).__init__(
             encoder_layer=encoder_layer,
             num_layers=num_layers,
             norm=norm
@@ -115,9 +121,9 @@ class ConformerLayer(torch.nn.Module):
                 cnn_module_kernel: int = 31,
                 normalize_before: bool = True,
                 ) -> None:
-        super(ConformerLayer, self).__int__()
+        super(ConformerLayer, self).__init__()
         self.self_attention = RelPositionMultiHeadAttention(
-            attention_dim, nhead, dropout=0.0
+            attention_dim, nhead, dropout_rate=0.0
         )
 
         self.feed_forward = torch.nn.Sequential(
@@ -131,7 +137,7 @@ class ConformerLayer(torch.nn.Module):
             torch.nn.Linear(attention_dim, feedforward_dim),
             Swish(),
             torch.nn.Dropout(dropout),
-            torch.nn.Linear()
+            torch.nn.Linear(feedforward_dim, attention_dim)
         )
 
         self.conv_module = ConvolutionModule(attention_dim, cnn_module_kernel)
@@ -159,7 +165,7 @@ class ConformerLayer(torch.nn.Module):
         if self.normalize_before:
             x = self.norm_ff_macaron(x)
 
-        x = x + self.ff_scale * self.dropout(
+        x = residual + self.ff_scale * self.dropout(
             self.feed_forward_macaron(x)
         )
 
@@ -176,7 +182,7 @@ class ConformerLayer(torch.nn.Module):
             x,
             pos_emb=pos_emb,
             key_padding_mask=x_key_padding_mask,
-            attentiom_mask=x_mask,
+            attention_mask=x_mask,
         )[0]
 
         x = residual + self.dropout(x_att)
@@ -195,7 +201,7 @@ class ConformerLayer(torch.nn.Module):
         if self.normalize_before:
             x = self.norm_ff(x)
         x = self.feed_forward(x)
-        x = x + self.ff_scale * self.dropout(x)
+        x = residual + self.ff_scale * self.dropout(x)
         if not self.normalize_before:
             x = self.norm_ff(x)
 
@@ -216,7 +222,7 @@ class ConvolutionModule(torch.nn.Module):
                 bias: bool = True
                 ) -> None:
 
-        super(ConvolutionModule, self).__int__()
+        super(ConvolutionModule, self).__init__()
 
         # Kernerl size should be a odd number for 'SAME' padding
         assert (kernel_size -1) % 2 == 0
@@ -236,9 +242,11 @@ class ConvolutionModule(torch.nn.Module):
             kernel_size,
             stride=1,
             padding=(kernel_size - 1) // 2,
+            groups=channels,
+            bias=bias
         )
 
-        self.norm = torch.nn.BatchNorm1d(channels)
+        self.norm = torch.nn.LayerNorm(channels)
 
         self.pointwise_conv2 = torch.nn.Conv1d(
             channels,
@@ -261,10 +269,15 @@ class ConvolutionModule(torch.nn.Module):
 
         # GLU mechanism
         x = self.pointwise_conv1(x)  # (b, 2*f, t)
-        x = torch.nn.functional.glu(x)  # (b, f, t)
+        x = torch.nn.functional.glu(x, dim=1)  # (b, f, t)
 
         x = self.depthwise_conv(x)
-        x = self.activation(self.norm(x))
+
+        x = x.permute(0, 2, 1)
+        self.norm(x)
+        x = x.permute(0, 2, 1)
+
+        x = self.activation(x)
 
         x = self.pointwise_conv2(x)
 
@@ -277,7 +290,7 @@ class RelPositionalEncoding(torch.nn.Module):
                 dropout_rate: float,
                 max_len: int = 5000
                 ) -> None:
-        super(RelPositionalEncoding, self).__int__()
+        super(RelPositionalEncoding, self).__init__()
         self.attention_dim = attention_dim
         self.scale = math.sqrt(self.attention_dim)
         self.dropout = torch.nn.Dropout(p=dropout_rate)
@@ -309,7 +322,7 @@ class RelPositionalEncoding(torch.nn.Module):
         self.pe = pe.to(device=x.device, dtype=x.dtype)
 
     def forward(self,
-                x:torch.Tensor
+                x: torch.Tensor
                 ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Generate positional encoding
@@ -326,12 +339,68 @@ class RelPositionalEncoding(torch.nn.Module):
             :,
             self.pe.size(1) // 2
             - x.size(1)
-            + 1: self.size(1) // 2
+            + 1: self.pe.size(1) // 2
             + x.size(1),
             :
         ]
 
         return self.dropout(x), self.dropout(pos_emb)
+
+# class RelPositionalEncoding(torch.nn.Module):
+#     """
+#     PE(pos, 2i) = sin(pos/ 10000^(2i/dim))
+#     PE(pos, 2i+1) = cos(pos / 10000^(2i/dim))
+#
+#     1 / (10000^(2i/d_model)) = exp(-log(10000^(2i/d_model)))
+#                                = exp(-1* 2i / d_model * log(100000))
+#                                = exp(2i * -(log(10000) / d_model))
+#     """
+#
+#     def __init__(self,
+#                  dim: int,
+#                  dropout: float = 0.1,
+#                  ) -> None:
+#
+#         super().__init__()
+#         self.dim = dim
+#         self.scale = math.sqrt(self.dim)
+#         self.dropout = torch.nn.Dropout(p=dropout)
+#
+#         self.pe = torch.zeros(1, 0, self.dim, dtype=torch.float32)
+#
+#     def extend_pe(self,
+#                   x: torch.Tensor
+#                   ) -> None:
+#
+#         if self.pe is not None:
+#             if self.pe.size(1) >= x.size(1):
+#                 self.pe = self.pe.to(dtype=x.dtype, device=x.device)
+#                 return
+#         pe = torch.zeros(x.size(1), self.dim, dtype=torch.float32)
+#         position = torch.arange(0, x.size(1), dtype=torch.float32).unsqueeze(1)
+#         div_term = torch.exp(
+#             torch.arange(0, self.dim, 2, dtype=torch.float32)
+#             * -(math.log(10000.0) / self.dim)
+#         )
+#         pe[:, 0::2] = torch.sin(position * div_term)
+#         pe[:, 1::2] = torch.cos(position * div_term)
+#
+#         pe = pe.unsqueeze(0)
+#         # pe is of shape(1, t, dim) where t is x.size(1）
+#         self.pe = pe.to(device=x.device, dtype=x.dtype)
+#
+#     def forward(self, x: torch.Tensor) -> torch.Tensor:
+#         """
+#         Add positional encoding.
+#         :param x:
+#         Its shape is (b, t, c)
+#         :return:
+#         tensor of shape(b, t, c)
+#         """
+#         self.extend_pe(x)
+#         x = x * self.scale
+#         pos_emb = self.pe[:, : x.size(1), :]
+#         return self.dropout(x), self.dropout(pos_emb)
 
 
 class RelPositionMultiHeadAttention(torch.nn.Module):
@@ -345,7 +414,7 @@ class RelPositionMultiHeadAttention(torch.nn.Module):
                 dropout_rate: float = 0.0
                 ) -> None:
 
-        super(RelPositionMultiHeadAttention, self).__int__()
+        super(RelPositionMultiHeadAttention, self).__init__()
         self.embed_dim = embed_dim
         self.nhead = nhead
         self.dropout_rate = dropout_rate
@@ -360,7 +429,7 @@ class RelPositionMultiHeadAttention(torch.nn.Module):
         self.linear_pos = torch.nn.Linear(embed_dim, embed_dim, bias=False)
 
         self.pos_bias_u = torch.nn.Parameter(torch.Tensor(nhead, self.head_dim))
-        self.pos_bias_v = torch.nn.parameter(torch.Tensor(nhead, self.head_dim))
+        self.pos_bias_v = torch.nn.Parameter(torch.Tensor(nhead, self.head_dim))
 
         self._reset_parameters()
 
